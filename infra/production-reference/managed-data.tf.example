@@ -1,0 +1,120 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "~> 2.91"
+    }
+  }
+}
+
+provider "digitalocean" {}
+
+variable "name_prefix" {
+  type    = string
+  default = "vm-service"
+}
+
+variable "region" {
+  type    = string
+  default = "nyc1"
+}
+
+variable "project_id" {
+  type    = string
+  default = null
+}
+
+variable "vpc_id" {
+  type    = string
+  default = null
+}
+
+variable "app_id" {
+  description = "App Platform app ID used for trusted-source firewall rules."
+  type        = string
+}
+
+variable "kafka_topic" {
+  type    = string
+  default = "vm.metric-samples.v1"
+}
+
+variable "kafka_dlq_topic" {
+  type    = string
+  default = "vm.metric-samples.dlq.v1"
+}
+
+resource "digitalocean_database_cluster" "postgres" {
+  name                 = "${var.name_prefix}-postgres"
+  engine               = "pg"
+  version              = "18"
+  size                 = "db-s-1vcpu-1gb"
+  region               = var.region
+  node_count           = 1
+  private_network_uuid = var.vpc_id
+  project_id           = var.project_id
+}
+
+resource "digitalocean_database_cluster" "kafka" {
+  name                 = "${var.name_prefix}-kafka"
+  engine               = "kafka"
+  version              = "3.5"
+  size                 = "db-s-2vcpu-2gb"
+  region               = var.region
+  node_count           = 3
+  private_network_uuid = var.vpc_id
+  project_id           = var.project_id
+}
+
+resource "digitalocean_database_kafka_topic" "metric_samples" {
+  cluster_id         = digitalocean_database_cluster.kafka.id
+  name               = var.kafka_topic
+  partition_count    = 12
+  replication_factor = 2
+}
+
+resource "digitalocean_database_kafka_topic" "metric_samples_dlq" {
+  cluster_id         = digitalocean_database_cluster.kafka.id
+  name               = var.kafka_dlq_topic
+  partition_count    = 3
+  replication_factor = 2
+}
+
+resource "digitalocean_database_firewall" "postgres" {
+  cluster_id = digitalocean_database_cluster.postgres.id
+
+  rule {
+    type  = "app"
+    value = var.app_id
+  }
+}
+
+resource "digitalocean_database_firewall" "kafka" {
+  cluster_id = digitalocean_database_cluster.kafka.id
+
+  rule {
+    type  = "app"
+    value = var.app_id
+  }
+}
+
+output "database_url" {
+  value     = replace(digitalocean_database_cluster.postgres.uri, "postgresql://", "postgresql+psycopg://")
+  sensitive = true
+}
+
+output "kafka_bootstrap_servers" {
+  value = "${digitalocean_database_cluster.kafka.host}:${digitalocean_database_cluster.kafka.port}"
+}
+
+output "kafka_username" {
+  value     = digitalocean_database_cluster.kafka.user
+  sensitive = true
+}
+
+output "kafka_password" {
+  value     = digitalocean_database_cluster.kafka.password
+  sensitive = true
+}

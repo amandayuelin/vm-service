@@ -123,6 +123,15 @@ GitHub Actions workflows live in `.github/workflows`:
 
 For a greenfield DigitalOcean environment, see `infra/terraform/README.md`.
 
+Fast deployment command:
+
+```bash
+export DIGITALOCEAN_TOKEN=<your-token>
+scripts/deploy_digitalocean.sh
+```
+
+Production reference IaC for the managed PostgreSQL/Kafka version lives in `infra/production-reference`.
+
 ## Configuration
 
 See `.env.example` for supported environment variables. Important values:

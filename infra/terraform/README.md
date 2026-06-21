@@ -47,6 +47,29 @@ Prerequisites:
 - Python 3.
 - App Platform GitHub integration installed for `amandayuelin/vm-service`.
 
+Fast path from the repo root:
+
+```bash
+export DIGITALOCEAN_TOKEN=<your-token>
+scripts/deploy_digitalocean.sh
+```
+
+For a non-interactive demo run:
+
+```bash
+export DIGITALOCEAN_TOKEN=<your-token>
+scripts/deploy_digitalocean.sh --auto-approve
+```
+
+Useful split commands:
+
+```bash
+scripts/deploy_digitalocean.sh --skip-app      # create/update only VPC + data Droplet
+scripts/deploy_digitalocean.sh --skip-infra    # deploy only App Platform from current Terraform outputs
+```
+
+Manual flow:
+
 Create infrastructure:
 
 ```bash
@@ -104,3 +127,7 @@ Manual workflow usage:
 2. Run `Terraform` with `apply=false`, `deploy_app=true` to deploy/update App Platform from App Spec.
 
 For a single future update after resources exist, use `apply=false`, `deploy_app=true` when only App Spec or application deployment settings changed.
+
+## Production Reference
+
+The production managed-service version is documented separately in `../production-reference`. Keep the interview deployment fast with this self-managed Droplet path, and use the production reference to explain the Managed PostgreSQL/Managed Kafka evolution during review.
