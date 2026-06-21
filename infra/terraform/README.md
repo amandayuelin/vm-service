@@ -1,30 +1,65 @@
-# Terraform Infrastructure
+# DigitalOcean Infrastructure
 
-This directory defines the DigitalOcean production stack for the VM metrics service:
+This project uses a hybrid IaC model:
 
-- App Platform web service for FastAPI.
-- App Platform worker for Kafka consumption.
+- Terraform owns durable data infrastructure.
+- DigitalOcean App Spec owns App Platform configuration.
+- GitHub Actions orchestrates both.
+
+## Resources
+
+Required resources:
+
+- DigitalOcean Managed PostgreSQL.
+- DigitalOcean Managed Kafka.
+- Kafka topic `vm.metric-samples.v1`.
+- Kafka DLQ topic `vm.metric-samples.dlq.v1`.
+- DigitalOcean App Platform app created from `.do/app.yaml.tmpl`.
+- App Platform API service.
+- App Platform worker service.
+- Database trusted-source rules allowing the App Platform app to reach PostgreSQL and Kafka.
+
+No standalone DigitalOcean Load Balancer is required. App Platform ingress provides the public HTTP entrypoint, routing, TLS termination, and load balancing for the API service.
+
+## Ownership
+
+Terraform files in this directory create:
+
 - Managed PostgreSQL.
 - Managed Kafka.
-- Kafka ingestion and DLQ topics.
-- Trusted-source database firewalls scoped to the App Platform app.
+- Kafka ingestion topic.
+- Kafka DLQ topic.
 
-## Important Safety Note
+The GitHub Actions workflow then:
 
-Terraform creates paid resources. Use this directory as the source of truth for a fresh greenfield environment after manually-created resources have been destroyed.
+1. Reads Terraform outputs.
+2. Fetches the Kafka CA certificate with `doctl databases get-ca`.
+3. Renders `.do/app.generated.yaml` from `.do/app.yaml.tmpl`.
+4. Upserts the App Platform app with `doctl apps create --spec --upsert`.
+5. Replaces PostgreSQL and Kafka trusted-source rules with `app:<app_id>`.
+6. Triggers a deployment after trusted-source rules are active.
 
-Terraform state will contain generated database credentials and App Platform secret values. Use a remote backend with restricted access before using CI/CD apply.
+## Safety
+
+Terraform creates paid resources. Use this only after manually-created resources have been destroyed or intentionally imported.
+
+Terraform state contains generated database credentials. Configure a remote backend with restricted access before using GitHub Actions apply.
 
 ## Local Greenfield Deployment
 
-Managed Kafka needs a CA certificate, but the CA certificate is only available after Kafka exists. Greenfield deployment therefore uses two applies. GitHub Actions can fetch the CA automatically with `doctl databases get-ca`; local deployment can either paste it into `terraform.tfvars` or pass it through `TF_VAR_kafka_ssl_ca_pem`.
+Prerequisites:
 
-### Phase 1: Data Services
+- Terraform.
+- doctl authenticated with your DigitalOcean account.
+- jq.
+- Python 3.
+- App Platform GitHub integration installed for `amandayuelin/vm-service`.
+
+Create data services:
 
 ```bash
 cd infra/terraform
 cp terraform.tfvars.example terraform.tfvars
-# keep enable_app=false
 export DIGITALOCEAN_TOKEN=<your-token>
 terraform init
 terraform fmt
@@ -32,95 +67,71 @@ terraform plan
 terraform apply
 ```
 
-This creates:
-
-- Managed PostgreSQL.
-- Managed Kafka.
-- Kafka ingestion topic.
-- Kafka DLQ topic.
-
-### Phase 2: App Platform API and Worker
-
-Fetch the Managed Kafka CA certificate:
+Render and deploy the App Spec from repo root:
 
 ```bash
-export TF_VAR_enable_app=true
-export TF_VAR_kafka_ssl_ca_pem="$(doctl databases get-ca "$(terraform output -raw kafka_cluster_id)" -o json | jq -r .certificate | base64 --decode)"
+cd ../..
+
+export APP_NAME="$(terraform -chdir=infra/terraform output -raw app_name)"
+export APP_REGION="$(terraform -chdir=infra/terraform output -raw app_region)"
+export GITHUB_REPO="$(terraform -chdir=infra/terraform output -raw github_repo)"
+export GITHUB_BRANCH="$(terraform -chdir=infra/terraform output -raw github_branch)"
+export DATABASE_URL="$(terraform -chdir=infra/terraform output -raw database_url)"
+export KAFKA_BOOTSTRAP_SERVERS="$(terraform -chdir=infra/terraform output -raw kafka_bootstrap_servers)"
+export KAFKA_SASL_MECHANISM="$(terraform -chdir=infra/terraform output -raw kafka_sasl_mechanism)"
+export KAFKA_USERNAME="$(terraform -chdir=infra/terraform output -raw kafka_username)"
+export KAFKA_PASSWORD="$(terraform -chdir=infra/terraform output -raw kafka_password)"
+export KAFKA_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_topic)"
+export KAFKA_DLQ_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_dlq_topic)"
+export KAFKA_CONSUMER_GROUP="$(terraform -chdir=infra/terraform output -raw kafka_consumer_group)"
+export API_INSTANCE_COUNT="$(terraform -chdir=infra/terraform output -raw api_instance_count)"
+export WORKER_INSTANCE_COUNT="$(terraform -chdir=infra/terraform output -raw worker_instance_count)"
+export APP_INSTANCE_SIZE_SLUG="$(terraform -chdir=infra/terraform output -raw app_instance_size_slug)"
+export WORKER_INSTANCE_SIZE_SLUG="$(terraform -chdir=infra/terraform output -raw worker_instance_size_slug)"
+export MAX_INGEST_BATCH_SIZE="$(terraform -chdir=infra/terraform output -raw max_ingest_batch_size)"
+export MAX_PAGE_SIZE="$(terraform -chdir=infra/terraform output -raw max_page_size)"
+export KAFKA_SSL_CA_PEM="$(doctl databases get-ca "$(terraform -chdir=infra/terraform output -raw kafka_cluster_id)" -o json | jq -r .certificate | base64 --decode)"
+
+python scripts/render_app_spec.py .do/app.yaml.tmpl .do/app.generated.yaml
+doctl apps spec validate .do/app.generated.yaml --schema-only
+APP_ID="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --format ID --no-header | awk 'NR == 1 {print $1}')"
+doctl databases firewalls replace "$(terraform -chdir=infra/terraform output -raw postgres_cluster_id)" --rule "app:$APP_ID"
+doctl databases firewalls replace "$(terraform -chdir=infra/terraform output -raw kafka_cluster_id)" --rule "app:$APP_ID"
+doctl apps create-deployment "$APP_ID" --update-sources --wait
 ```
 
-Or download the Managed Kafka CA certificate from DigitalOcean and update `terraform.tfvars`:
+## GitHub Actions
 
-```hcl
-enable_app = true
+Required GitHub secret:
 
-kafka_ssl_ca_pem = <<EOT
------BEGIN CERTIFICATE-----
-paste-the-real-kafka-ca-certificate
------END CERTIFICATE-----
-EOT
-```
+- `DIGITALOCEAN_TOKEN`
 
-Apply again:
+Before using `apply=true` or `deploy_app=true`, configure `infra/terraform/backend.tf` from `backend.tf.example`.
 
-```bash
-terraform plan
-terraform apply
-```
+Manual workflow usage:
 
-This creates:
+1. Run `Terraform` with `apply=true`, `deploy_app=false` to create data services.
+2. Run `Terraform` with `apply=false`, `deploy_app=true` to deploy/update App Platform from App Spec.
 
-- App Platform API service.
-- App Platform worker.
-- App-level environment variables.
-- Trusted-source database firewall rules.
-
-After phase 2, if the app deployment starts before trusted-source firewall rules are fully active, trigger one App Platform redeploy.
+For a single future update after resources exist, use `apply=false`, `deploy_app=true` when only App Spec or application deployment settings changed.
 
 ## Import Existing Resources
 
-Use this only if you keep any resources that were created in the DigitalOcean UI.
+Use import only if you keep resources created outside this workflow.
 
 ```bash
 export DIGITALOCEAN_TOKEN=<your-token>
-doctl apps list
 doctl databases list
 ```
 
-Then import matching resources:
+Then import matching data resources:
 
 ```bash
 cd infra/terraform
 terraform init
-terraform import 'digitalocean_app.vm_service[0]' <app-id>
 terraform import digitalocean_database_cluster.postgres <postgres-cluster-id>
 terraform import digitalocean_database_cluster.kafka <kafka-cluster-id>
 terraform import digitalocean_database_kafka_topic.metric_samples <kafka-cluster-id>,vm.metric-samples.v1
 terraform import digitalocean_database_kafka_topic.metric_samples_dlq <kafka-cluster-id>,vm.metric-samples.dlq.v1
-terraform import 'digitalocean_database_firewall.postgres[0]' <postgres-cluster-id>
-terraform import 'digitalocean_database_firewall.kafka[0]' <kafka-cluster-id>
-```
-
-After imports:
-
-```bash
 terraform plan
 ```
-
-Review the plan carefully. If Terraform wants to replace resources you intend to keep, stop and adjust variables to match the existing setup.
-
-## GitHub Actions
-
-The Terraform workflow validates configuration on pull requests and supports manual plan/apply through `workflow_dispatch`.
-
-Required GitHub secrets:
-
-- `DIGITALOCEAN_TOKEN`
-
-CI apply is intentionally blocked unless a real `backend.tf` exists in this directory. Add a remote backend before enabling apply from GitHub Actions.
-
-Manual workflow usage after remote state is configured:
-
-1. Run `Terraform` with `enable_app=false`, `apply=true`.
-2. Run `Terraform` with `enable_app=true`, `apply=true`.
-
-The second run reads `kafka_cluster_id` from Terraform state and fetches the Kafka CA certificate with `doctl`.

@@ -14,3 +14,6 @@ htmlcov/
 !*.tfvars.example
 crash.log
 crash.*.log
+
+# Generated deployment artifacts
+.do/app.generated.yaml

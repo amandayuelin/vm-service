@@ -99,21 +99,29 @@ docker compose up --build
 
 ## Infrastructure as Code and CI/CD
 
-Terraform configuration lives in `infra/terraform` and can create:
+The deployment uses a hybrid IaC model:
 
-- DigitalOcean App Platform API service.
-- DigitalOcean App Platform worker component.
-- DigitalOcean Managed PostgreSQL.
-- DigitalOcean Managed Kafka.
+- Terraform in `infra/terraform` creates Managed PostgreSQL, Managed Kafka, and Kafka topics.
+- DigitalOcean App Spec in `.do/app.yaml.tmpl` defines the App Platform API service, worker, env vars, health check, and ingress.
+- GitHub Actions renders `.do/app.generated.yaml` from Terraform outputs, upserts the App Platform app with `doctl`, and configures database trusted sources.
+
+Required DigitalOcean resources:
+
+- Managed PostgreSQL.
+- Managed Kafka.
 - Kafka ingestion and DLQ topics.
-- Trusted-source database firewall rules for the app.
+- App Platform API service.
+- App Platform worker component.
+- Trusted-source database firewall rules scoped to the App Platform app.
+
+A standalone DigitalOcean Load Balancer is not required. App Platform ingress provides the public HTTP entrypoint, routing, TLS termination, and load balancing.
 
 GitHub Actions workflows live in `.github/workflows`:
 
 - `CI` runs tests and builds the Docker image on pushes and pull requests.
-- `Terraform` validates Terraform on infrastructure changes and supports manual plan/apply through workflow dispatch.
+- `Terraform` validates Terraform, applies data infrastructure, renders App Spec, deploys the App Platform app, and configures trusted sources through manual workflow dispatch.
 
-For a greenfield DigitalOcean environment, use the two-phase Terraform flow in `infra/terraform/README.md`: first create PostgreSQL/Kafka/topics, then create App Platform API/worker after the Kafka CA certificate is available.
+For a greenfield DigitalOcean environment, see `infra/terraform/README.md`.
 
 ## Configuration
 
@@ -143,20 +151,20 @@ Deployment target is DigitalOcean App Platform with:
 - DigitalOcean Managed PostgreSQL.
 - DigitalOcean Managed Kafka.
 - App Platform ingress/load balancing.
-- `/healthz` as the health check path.
-- Environment variables configured in App Platform.
+- App Spec-managed `/healthz` health check.
+- App Spec-managed runtime environment variables.
 
-For DigitalOcean Managed Kafka, use SASL/SSL connection details from the Kafka cluster Overview page:
+For DigitalOcean Managed Kafka, production uses SASL/SSL:
 
 ```text
 KAFKA_SECURITY_PROTOCOL=SASL_SSL
 KAFKA_SASL_MECHANISM=SCRAM-SHA-256
 KAFKA_USERNAME=<managed-kafka-user>
 KAFKA_PASSWORD=<managed-kafka-password>
-KAFKA_SSL_CA_LOCATION=/app/certs/ca-certificate.crt
+KAFKA_SSL_CA_PEM=<managed-kafka-ca-certificate>
 ```
 
-If App Platform cannot mount the CA file directly, set the downloaded CA certificate contents as encrypted `KAFKA_SSL_CA_PEM` instead. The app writes it to `/tmp/kafka-ca-certificate.crt` at startup and passes that path to the Kafka client.
+The deployment workflow fetches the Kafka CA certificate using `doctl databases get-ca` and injects it into the generated App Spec as encrypted `KAFKA_SSL_CA_PEM`. The app writes it to `/tmp/kafka-ca-certificate.crt` at startup and passes that path to the Kafka client.
 
 Smoke tests after deployment:
 

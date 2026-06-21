@@ -1,0 +1,114 @@
+name: ${APP_NAME}
+region: ${APP_REGION}
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+
+envs:
+  - key: ENVIRONMENT
+    value: "production"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: LOG_LEVEL
+    value: "INFO"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: PORT
+    value: "8000"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTO_CREATE_SCHEMA
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: DATABASE_URL
+    value: ${DATABASE_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: KAFKA_BOOTSTRAP_SERVERS
+    value: ${KAFKA_BOOTSTRAP_SERVERS}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: KAFKA_SECURITY_PROTOCOL
+    value: "SASL_SSL"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: KAFKA_SASL_MECHANISM
+    value: ${KAFKA_SASL_MECHANISM}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: KAFKA_USERNAME
+    value: ${KAFKA_USERNAME}
+    scope: RUN_TIME
+    type: SECRET
+  - key: KAFKA_PASSWORD
+    value: ${KAFKA_PASSWORD}
+    scope: RUN_TIME
+    type: SECRET
+  - key: KAFKA_SSL_CA_PEM
+    value: |
+${KAFKA_SSL_CA_PEM_BLOCK}
+    scope: RUN_TIME
+    type: SECRET
+  - key: KAFKA_TOPIC
+    value: ${KAFKA_TOPIC}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: KAFKA_DLQ_TOPIC
+    value: ${KAFKA_DLQ_TOPIC}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: KAFKA_CONSUMER_GROUP
+    value: ${KAFKA_CONSUMER_GROUP}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: MAX_INGEST_BATCH_SIZE
+    value: ${MAX_INGEST_BATCH_SIZE}
+    scope: RUN_TIME
+    type: GENERAL
+  - key: MAX_PAGE_SIZE
+    value: ${MAX_PAGE_SIZE}
+    scope: RUN_TIME
+    type: GENERAL
+
+services:
+  - name: api
+    github:
+      repo: ${GITHUB_REPO}
+      branch: ${GITHUB_BRANCH}
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 8000
+    instance_count: ${API_INSTANCE_COUNT}
+    instance_size_slug: ${APP_INSTANCE_SIZE_SLUG}
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+
+workers:
+  - name: worker
+    github:
+      repo: ${GITHUB_REPO}
+      branch: ${GITHUB_BRANCH}
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    run_command: python -m app.workers.metrics_worker
+    instance_count: ${WORKER_INSTANCE_COUNT}
+    instance_size_slug: ${WORKER_INSTANCE_SIZE_SLUG}
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 5
+        window: TEN_MINUTES
+
+ingress:
+  rules:
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /

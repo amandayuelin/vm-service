@@ -46,12 +46,6 @@ variable "vpc_id" {
   default     = null
 }
 
-variable "enable_app" {
-  description = "Create the App Platform API and worker. For greenfield deploys, set false for phase 1 until the Kafka CA certificate is available."
-  type        = bool
-  default     = false
-}
-
 variable "postgres_version" {
   description = "Managed PostgreSQL major version."
   type        = string
@@ -133,13 +127,6 @@ variable "kafka_sasl_mechanism" {
   default     = "SCRAM-SHA-256"
 }
 
-variable "kafka_ssl_ca_pem" {
-  description = "DigitalOcean Managed Kafka CA certificate contents."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "kafka_consumer_group" {
   description = "Kafka consumer group used by App Platform worker components."
   type        = string
@@ -180,10 +167,4 @@ variable "max_page_size" {
   description = "Maximum rows returned by paginated query endpoints."
   type        = number
   default     = 1000
-}
-
-variable "enable_database_firewalls" {
-  description = "Restrict database and Kafka access to the App Platform app."
-  type        = bool
-  default     = true
 }
