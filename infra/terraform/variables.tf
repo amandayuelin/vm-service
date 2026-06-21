@@ -46,6 +46,12 @@ variable "vpc_id" {
   default     = null
 }
 
+variable "enable_app" {
+  description = "Create the App Platform API and worker. For greenfield deploys, set false for phase 1 until the Kafka CA certificate is available."
+  type        = bool
+  default     = false
+}
+
 variable "postgres_version" {
   description = "Managed PostgreSQL major version."
   type        = string
@@ -130,6 +136,7 @@ variable "kafka_sasl_mechanism" {
 variable "kafka_ssl_ca_pem" {
   description = "DigitalOcean Managed Kafka CA certificate contents."
   type        = string
+  default     = ""
   sensitive   = true
 }
 

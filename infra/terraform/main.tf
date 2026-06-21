@@ -43,6 +43,8 @@ resource "digitalocean_database_kafka_topic" "metric_samples_dlq" {
 }
 
 resource "digitalocean_app" "vm_service" {
+  count = var.enable_app ? 1 : 0
+
   spec {
     name       = var.app_name
     region     = var.app_region
@@ -235,24 +237,31 @@ resource "digitalocean_app" "vm_service" {
     digitalocean_database_kafka_topic.metric_samples,
     digitalocean_database_kafka_topic.metric_samples_dlq,
   ]
+
+  lifecycle {
+    precondition {
+      condition     = trimspace(var.kafka_ssl_ca_pem) != ""
+      error_message = "Set kafka_ssl_ca_pem before creating the App Platform app. For greenfield deploys, apply phase 1 with enable_app=false, download the Kafka CA cert, then apply phase 2 with enable_app=true."
+    }
+  }
 }
 
 resource "digitalocean_database_firewall" "postgres" {
-  count      = var.enable_database_firewalls ? 1 : 0
+  count      = var.enable_app && var.enable_database_firewalls ? 1 : 0
   cluster_id = digitalocean_database_cluster.postgres.id
 
   rule {
     type  = "app"
-    value = digitalocean_app.vm_service.id
+    value = digitalocean_app.vm_service[0].id
   }
 }
 
 resource "digitalocean_database_firewall" "kafka" {
-  count      = var.enable_database_firewalls ? 1 : 0
+  count      = var.enable_app && var.enable_database_firewalls ? 1 : 0
   cluster_id = digitalocean_database_cluster.kafka.id
 
   rule {
     type  = "app"
-    value = digitalocean_app.vm_service.id
+    value = digitalocean_app.vm_service[0].id
   }
 }

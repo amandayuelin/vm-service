@@ -7,6 +7,11 @@ on:
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
     inputs:
+      enable_app:
+        description: "Create/update App Platform API and worker. Use false for phase 1, true after Kafka CA is available."
+        required: true
+        type: boolean
+        default: false
       apply:
         description: "Apply the Terraform plan. Requires backend.tf and repository secrets."
         required: true
@@ -50,6 +55,7 @@ jobs:
         working-directory: infra/terraform
     env:
       DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      TF_VAR_enable_app: ${{ inputs.enable_app }}
       TF_VAR_kafka_ssl_ca_pem: ${{ secrets.KAFKA_SSL_CA_PEM }}
 
     steps:

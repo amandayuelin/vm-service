@@ -1,11 +1,11 @@
 output "app_id" {
   description = "DigitalOcean App Platform app ID."
-  value       = digitalocean_app.vm_service.id
+  value       = try(digitalocean_app.vm_service[0].id, null)
 }
 
 output "app_live_url" {
   description = "Live URL for the App Platform app."
-  value       = digitalocean_app.vm_service.live_url
+  value       = try(digitalocean_app.vm_service[0].live_url, null)
 }
 
 output "postgres_cluster_id" {

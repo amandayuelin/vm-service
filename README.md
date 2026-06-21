@@ -113,7 +113,7 @@ GitHub Actions workflows live in `.github/workflows`:
 - `CI` runs tests and builds the Docker image on pushes and pull requests.
 - `Terraform` validates Terraform on infrastructure changes and supports manual plan/apply through workflow dispatch.
 
-For your manually-created DigitalOcean resources, import them into Terraform state before applying. See `infra/terraform/README.md`.
+For a greenfield DigitalOcean environment, use the two-phase Terraform flow in `infra/terraform/README.md`: first create PostgreSQL/Kafka/topics, then create App Platform API/worker after the Kafka CA certificate is available.
 
 ## Configuration
 
