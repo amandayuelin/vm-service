@@ -103,6 +103,12 @@ See `.env.example` for supported environment variables. Important values:
 
 - `DATABASE_URL`
 - `KAFKA_BOOTSTRAP_SERVERS`
+- `KAFKA_SECURITY_PROTOCOL`
+- `KAFKA_SASL_MECHANISM`
+- `KAFKA_USERNAME`
+- `KAFKA_PASSWORD`
+- `KAFKA_SSL_CA_LOCATION`
+- `KAFKA_SSL_CA_PEM`
 - `KAFKA_TOPIC`
 - `KAFKA_CONSUMER_GROUP`
 - `MAX_INGEST_BATCH_SIZE`
@@ -121,6 +127,18 @@ Deployment target is DigitalOcean App Platform with:
 - App Platform ingress/load balancing.
 - `/healthz` as the health check path.
 - Environment variables configured in App Platform.
+
+For DigitalOcean Managed Kafka, use SASL/SSL connection details from the Kafka cluster Overview page:
+
+```text
+KAFKA_SECURITY_PROTOCOL=SASL_SSL
+KAFKA_SASL_MECHANISM=SCRAM-SHA-256
+KAFKA_USERNAME=<managed-kafka-user>
+KAFKA_PASSWORD=<managed-kafka-password>
+KAFKA_SSL_CA_LOCATION=/app/certs/ca-certificate.crt
+```
+
+If App Platform cannot mount the CA file directly, set the downloaded CA certificate contents as encrypted `KAFKA_SSL_CA_PEM` instead. The app writes it to `/tmp/kafka-ca-certificate.crt` at startup and passes that path to the Kafka client.
 
 Smoke tests after deployment:
 

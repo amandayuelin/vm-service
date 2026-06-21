@@ -33,6 +33,9 @@ def consumer_config(settings: Settings) -> dict[str, str | bool]:
         config["sasl.username"] = settings.kafka_username
     if settings.kafka_password:
         config["sasl.password"] = settings.kafka_password
+    ca_location = settings.resolved_kafka_ssl_ca_location()
+    if ca_location:
+        config["ssl.ca.location"] = ca_location
     return config
 
 

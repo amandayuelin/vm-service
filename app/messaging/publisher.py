@@ -34,6 +34,9 @@ class KafkaMetricPublisher:
             config["sasl.username"] = self._settings.kafka_username
         if self._settings.kafka_password:
             config["sasl.password"] = self._settings.kafka_password
+        ca_location = self._settings.resolved_kafka_ssl_ca_location()
+        if ca_location:
+            config["ssl.ca.location"] = ca_location
         return config
 
     def _get_producer(self):
