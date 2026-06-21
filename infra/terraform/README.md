@@ -17,7 +17,7 @@ Terraform state will contain generated database credentials and App Platform sec
 
 ## Local Greenfield Deployment
 
-Managed Kafka needs a CA certificate, but the CA certificate is only available after Kafka exists. Greenfield deployment therefore uses two applies.
+Managed Kafka needs a CA certificate, but the CA certificate is only available after Kafka exists. Greenfield deployment therefore uses two applies. GitHub Actions can fetch the CA automatically with `doctl databases get-ca`; local deployment can either paste it into `terraform.tfvars` or pass it through `TF_VAR_kafka_ssl_ca_pem`.
 
 ### Phase 1: Data Services
 
@@ -41,7 +41,14 @@ This creates:
 
 ### Phase 2: App Platform API and Worker
 
-Download the Managed Kafka CA certificate from DigitalOcean, then update `terraform.tfvars`:
+Fetch the Managed Kafka CA certificate:
+
+```bash
+export TF_VAR_enable_app=true
+export TF_VAR_kafka_ssl_ca_pem="$(doctl databases get-ca "$(terraform output -raw kafka_cluster_id)" -o json | jq -r .certificate | base64 --decode)"
+```
+
+Or download the Managed Kafka CA certificate from DigitalOcean and update `terraform.tfvars`:
 
 ```hcl
 enable_app = true
@@ -108,6 +115,12 @@ The Terraform workflow validates configuration on pull requests and supports man
 Required GitHub secrets:
 
 - `DIGITALOCEAN_TOKEN`
-- `KAFKA_SSL_CA_PEM`
 
 CI apply is intentionally blocked unless a real `backend.tf` exists in this directory. Add a remote backend before enabling apply from GitHub Actions.
+
+Manual workflow usage after remote state is configured:
+
+1. Run `Terraform` with `enable_app=false`, `apply=true`.
+2. Run `Terraform` with `enable_app=true`, `apply=true`.
+
+The second run reads `kafka_cluster_id` from Terraform state and fetches the Kafka CA certificate with `doctl`.

@@ -56,7 +56,6 @@ jobs:
     env:
       DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
       TF_VAR_enable_app: ${{ inputs.enable_app }}
-      TF_VAR_kafka_ssl_ca_pem: ${{ secrets.KAFKA_SSL_CA_PEM }}
 
     steps:
       - name: Check out repository
@@ -64,6 +63,12 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Set up doctl
+        if: inputs.enable_app == true
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
 
       - name: Require remote backend for apply
         if: inputs.apply == true
@@ -75,6 +80,17 @@ jobs:
 
       - name: Terraform init
         run: terraform init
+
+      - name: Fetch Kafka CA certificate
+        if: inputs.enable_app == true
+        run: |
+          kafka_cluster_id="$(terraform output -raw kafka_cluster_id)"
+          kafka_ca_pem="$(doctl databases get-ca "$kafka_cluster_id" -o json | jq -r .certificate | base64 --decode)"
+          {
+            echo "TF_VAR_kafka_ssl_ca_pem<<EOF"
+            echo "$kafka_ca_pem"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Terraform plan
         run: terraform plan -input=false -out=tfplan
