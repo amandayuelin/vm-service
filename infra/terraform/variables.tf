@@ -1,5 +1,5 @@
 variable "name_prefix" {
-  description = "Prefix used for managed infrastructure resource names."
+  description = "Prefix used for infrastructure resource names."
   type        = string
   default     = "vm-service"
 }
@@ -28,63 +28,52 @@ variable "app_region" {
   default     = "nyc"
 }
 
-variable "database_region" {
-  description = "DigitalOcean database region slug."
+variable "region" {
+  description = "DigitalOcean region for the VPC and self-managed data Droplet."
   type        = string
   default     = "nyc1"
 }
 
-variable "project_id" {
-  description = "Optional DigitalOcean project ID for created resources."
+variable "vpc_ip_range" {
+  description = "Private CIDR range for App Platform to data Droplet communication."
   type        = string
-  default     = null
+  default     = "10.20.0.0/16"
 }
 
-variable "vpc_id" {
-  description = "Optional VPC UUID to attach App Platform and database clusters."
+variable "data_droplet_image" {
+  description = "Droplet image used for the self-managed data node."
   type        = string
-  default     = null
+  default     = "ubuntu-24-04-x64"
 }
 
-variable "postgres_version" {
-  description = "Managed PostgreSQL major version."
+variable "data_droplet_size" {
+  description = "Droplet size used for self-managed PostgreSQL and Kafka."
   type        = string
-  default     = "18"
+  default     = "s-2vcpu-2gb"
 }
 
-variable "postgres_size" {
-  description = "Managed PostgreSQL cluster size slug."
+variable "ssh_key_fingerprints" {
+  description = "Optional SSH key fingerprints/IDs for Droplet access."
+  type        = list(string)
+  default     = []
+}
+
+variable "ssh_allowed_cidrs" {
+  description = "Optional CIDR blocks allowed to SSH to the data Droplet. Leave empty to block SSH."
+  type        = list(string)
+  default     = []
+}
+
+variable "postgres_db" {
+  description = "PostgreSQL database name."
   type        = string
-  default     = "db-s-1vcpu-1gb"
+  default     = "vm_metrics"
 }
 
-variable "postgres_node_count" {
-  description = "Managed PostgreSQL node count."
-  type        = number
-  default     = 1
-}
-
-variable "kafka_version" {
-  description = "Managed Kafka version."
+variable "postgres_user" {
+  description = "PostgreSQL application username."
   type        = string
-  default     = "3.5"
-}
-
-variable "kafka_size" {
-  description = "Managed Kafka cluster size slug."
-  type        = string
-  default     = "db-s-2vcpu-2gb"
-}
-
-variable "kafka_node_count" {
-  description = "Managed Kafka node count. DigitalOcean requires 3 for Kafka clusters."
-  type        = number
-  default     = 3
-
-  validation {
-    condition     = var.kafka_node_count == 3
-    error_message = "DigitalOcean Managed Kafka clusters require kafka_node_count to be 3."
-  }
+  default     = "vm_metrics"
 }
 
 variable "kafka_topic" {
@@ -105,26 +94,15 @@ variable "kafka_partition_count" {
   default     = 12
 
   validation {
-    condition     = var.kafka_partition_count >= 3
-    error_message = "Kafka topic partition count must be at least 3."
+    condition     = var.kafka_partition_count >= 1
+    error_message = "Kafka topic partition count must be at least 1."
   }
 }
 
-variable "kafka_replication_factor" {
-  description = "Replication factor for Kafka topics."
+variable "max_kafka_heap_mb" {
+  description = "Kafka JVM heap size in MB on the self-managed data Droplet."
   type        = number
-  default     = 2
-
-  validation {
-    condition     = var.kafka_replication_factor >= 2 && var.kafka_replication_factor <= var.kafka_node_count
-    error_message = "Kafka topic replication factor must be at least 2 and no greater than kafka_node_count."
-  }
-}
-
-variable "kafka_sasl_mechanism" {
-  description = "SASL mechanism for DigitalOcean Managed Kafka."
-  type        = string
-  default     = "SCRAM-SHA-256"
+  default     = 768
 }
 
 variable "kafka_consumer_group" {

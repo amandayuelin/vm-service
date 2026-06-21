@@ -1,49 +1,42 @@
 # DigitalOcean Infrastructure
 
-This project uses a hybrid IaC model:
+This project uses a fast interview-friendly IaC model:
 
-- Terraform owns durable data infrastructure.
-- DigitalOcean App Spec owns App Platform configuration.
-- GitHub Actions orchestrates both.
+- Terraform creates the private network and self-managed data node.
+- The data node runs PostgreSQL and Kafka with Docker Compose.
+- DigitalOcean App Spec owns App Platform API/worker configuration.
+- App Platform ingress provides the public HTTP entrypoint and load balancing.
 
 ## Resources
 
-Required resources:
+Terraform creates:
 
-- DigitalOcean Managed PostgreSQL.
-- DigitalOcean Managed Kafka.
-- Kafka topic `vm.metric-samples.v1`.
+- DigitalOcean VPC.
+- One Ubuntu data Droplet.
+- Dockerized PostgreSQL on the data Droplet.
+- Dockerized single-node Kafka on the data Droplet.
+- Kafka ingestion topic `vm.metric-samples.v1`.
 - Kafka DLQ topic `vm.metric-samples.dlq.v1`.
-- DigitalOcean App Platform app created from `.do/app.yaml.tmpl`.
+- DigitalOcean Cloud Firewall allowing PostgreSQL/Kafka only from the VPC.
+
+App Spec creates:
+
+- DigitalOcean App Platform app.
 - App Platform API service.
 - App Platform worker service.
-- Database trusted-source rules allowing the App Platform app to reach PostgreSQL and Kafka.
+- App Platform ingress route to the API service.
 
-No standalone DigitalOcean Load Balancer is required. App Platform ingress provides the public HTTP entrypoint, routing, TLS termination, and load balancing for the API service.
+No standalone DigitalOcean Load Balancer is required. App Platform ingress provides public routing, TLS termination, and load balancing for the API service.
 
-## Ownership
+## Trade-off
 
-Terraform files in this directory create:
-
-- Managed PostgreSQL.
-- Managed Kafka.
-- Kafka ingestion topic.
-- Kafka DLQ topic.
-
-The GitHub Actions workflow then:
-
-1. Reads Terraform outputs.
-2. Fetches the Kafka CA certificate with `doctl databases get-ca`.
-3. Renders `.do/app.generated.yaml` from `.do/app.yaml.tmpl`.
-4. Upserts the App Platform app with `doctl apps create --spec --upsert`.
-5. Replaces PostgreSQL and Kafka trusted-source rules with `app:<app_id>`.
-6. Triggers a deployment after trusted-source rules are active.
+This self-managed data node provisions much faster than DigitalOcean Managed Kafka and is good for a 3-hour interview/demo. It is not HA and should not be presented as the final production architecture. The production evolution is Managed PostgreSQL, Managed Kafka, backups, multi-node Kafka, stronger auth, metrics, and alerting.
 
 ## Safety
 
-Terraform creates paid resources. Use this only after manually-created resources have been destroyed or intentionally imported.
+Terraform creates paid resources. If a previous managed-database apply partially succeeded, this new plan may show destroys for the old managed resources and creates for the new Droplet/VPC resources. Review the plan before typing `yes`.
 
-Terraform state contains generated database credentials. Configure a remote backend with restricted access before using GitHub Actions apply.
+Terraform state contains generated PostgreSQL credentials. Configure a remote backend with restricted access before using GitHub Actions apply.
 
 ## Local Greenfield Deployment
 
@@ -51,11 +44,10 @@ Prerequisites:
 
 - Terraform.
 - doctl authenticated with your DigitalOcean account.
-- jq.
 - Python 3.
 - App Platform GitHub integration installed for `amandayuelin/vm-service`.
 
-Create data services:
+Create infrastructure:
 
 ```bash
 cd infra/terraform
@@ -67,6 +59,8 @@ terraform plan
 terraform apply
 ```
 
+The Droplet cloud-init script installs Docker, starts PostgreSQL/Kafka, and creates Kafka topics. It can take several minutes after the Droplet resource is created for Docker and Kafka to finish bootstrapping.
+
 Render and deploy the App Spec from repo root:
 
 ```bash
@@ -74,13 +68,12 @@ cd ../..
 
 export APP_NAME="$(terraform -chdir=infra/terraform output -raw app_name)"
 export APP_REGION="$(terraform -chdir=infra/terraform output -raw app_region)"
+export VPC_ID="$(terraform -chdir=infra/terraform output -raw vpc_id)"
 export GITHUB_REPO="$(terraform -chdir=infra/terraform output -raw github_repo)"
 export GITHUB_BRANCH="$(terraform -chdir=infra/terraform output -raw github_branch)"
 export DATABASE_URL="$(terraform -chdir=infra/terraform output -raw database_url)"
 export KAFKA_BOOTSTRAP_SERVERS="$(terraform -chdir=infra/terraform output -raw kafka_bootstrap_servers)"
-export KAFKA_SASL_MECHANISM="$(terraform -chdir=infra/terraform output -raw kafka_sasl_mechanism)"
-export KAFKA_USERNAME="$(terraform -chdir=infra/terraform output -raw kafka_username)"
-export KAFKA_PASSWORD="$(terraform -chdir=infra/terraform output -raw kafka_password)"
+export KAFKA_SECURITY_PROTOCOL="$(terraform -chdir=infra/terraform output -raw kafka_security_protocol)"
 export KAFKA_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_topic)"
 export KAFKA_DLQ_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_dlq_topic)"
 export KAFKA_CONSUMER_GROUP="$(terraform -chdir=infra/terraform output -raw kafka_consumer_group)"
@@ -90,13 +83,10 @@ export APP_INSTANCE_SIZE_SLUG="$(terraform -chdir=infra/terraform output -raw ap
 export WORKER_INSTANCE_SIZE_SLUG="$(terraform -chdir=infra/terraform output -raw worker_instance_size_slug)"
 export MAX_INGEST_BATCH_SIZE="$(terraform -chdir=infra/terraform output -raw max_ingest_batch_size)"
 export MAX_PAGE_SIZE="$(terraform -chdir=infra/terraform output -raw max_page_size)"
-export KAFKA_SSL_CA_PEM="$(doctl databases get-ca "$(terraform -chdir=infra/terraform output -raw kafka_cluster_id)" -o json | jq -r .certificate | base64 --decode)"
 
 python scripts/render_app_spec.py .do/app.yaml.tmpl .do/app.generated.yaml
-doctl apps spec validate .do/app.generated.yaml --schema-only
+doctl apps spec validate .do/app.generated.yaml --schema-only > /dev/null
 APP_ID="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --format ID --no-header | awk 'NR == 1 {print $1}')"
-doctl databases firewalls replace "$(terraform -chdir=infra/terraform output -raw postgres_cluster_id)" --rule "app:$APP_ID"
-doctl databases firewalls replace "$(terraform -chdir=infra/terraform output -raw kafka_cluster_id)" --rule "app:$APP_ID"
 doctl apps create-deployment "$APP_ID" --update-sources --wait
 ```
 
@@ -110,28 +100,7 @@ Before using `apply=true` or `deploy_app=true`, configure `infra/terraform/backe
 
 Manual workflow usage:
 
-1. Run `Terraform` with `apply=true`, `deploy_app=false` to create data services.
+1. Run `Terraform` with `apply=true`, `deploy_app=false` to create the VPC and data Droplet.
 2. Run `Terraform` with `apply=false`, `deploy_app=true` to deploy/update App Platform from App Spec.
 
 For a single future update after resources exist, use `apply=false`, `deploy_app=true` when only App Spec or application deployment settings changed.
-
-## Import Existing Resources
-
-Use import only if you keep resources created outside this workflow.
-
-```bash
-export DIGITALOCEAN_TOKEN=<your-token>
-doctl databases list
-```
-
-Then import matching data resources:
-
-```bash
-cd infra/terraform
-terraform init
-terraform import digitalocean_database_cluster.postgres <postgres-cluster-id>
-terraform import digitalocean_database_cluster.kafka <kafka-cluster-id>
-terraform import digitalocean_database_kafka_topic.metric_samples <kafka-cluster-id>,vm.metric-samples.v1
-terraform import digitalocean_database_kafka_topic.metric_samples_dlq <kafka-cluster-id>,vm.metric-samples.dlq.v1
-terraform plan
-```

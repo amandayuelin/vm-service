@@ -101,25 +101,25 @@ docker compose up --build
 
 The deployment uses a hybrid IaC model:
 
-- Terraform in `infra/terraform` creates Managed PostgreSQL, Managed Kafka, and Kafka topics.
+- Terraform in `infra/terraform` creates a VPC, one self-managed data Droplet, PostgreSQL, Kafka, and Kafka topics.
 - DigitalOcean App Spec in `.do/app.yaml.tmpl` defines the App Platform API service, worker, env vars, health check, and ingress.
-- GitHub Actions renders `.do/app.generated.yaml` from Terraform outputs, upserts the App Platform app with `doctl`, and configures database trusted sources.
+- GitHub Actions renders `.do/app.generated.yaml` from Terraform outputs and upserts the App Platform app with `doctl`.
 
 Required DigitalOcean resources:
 
-- Managed PostgreSQL.
-- Managed Kafka.
+- VPC.
+- Self-managed data Droplet running Dockerized PostgreSQL and Kafka.
 - Kafka ingestion and DLQ topics.
 - App Platform API service.
 - App Platform worker component.
-- Trusted-source database firewall rules scoped to the App Platform app.
+- Cloud Firewall allowing PostgreSQL/Kafka only from the VPC.
 
 A standalone DigitalOcean Load Balancer is not required. App Platform ingress provides the public HTTP entrypoint, routing, TLS termination, and load balancing.
 
 GitHub Actions workflows live in `.github/workflows`:
 
 - `CI` runs tests and builds the Docker image on pushes and pull requests.
-- `Terraform` validates Terraform, applies data infrastructure, renders App Spec, deploys the App Platform app, and configures trusted sources through manual workflow dispatch.
+- `Terraform` validates Terraform, applies infrastructure, renders App Spec, and deploys the App Platform app through manual workflow dispatch.
 
 For a greenfield DigitalOcean environment, see `infra/terraform/README.md`.
 
@@ -130,11 +130,6 @@ See `.env.example` for supported environment variables. Important values:
 - `DATABASE_URL`
 - `KAFKA_BOOTSTRAP_SERVERS`
 - `KAFKA_SECURITY_PROTOCOL`
-- `KAFKA_SASL_MECHANISM`
-- `KAFKA_USERNAME`
-- `KAFKA_PASSWORD`
-- `KAFKA_SSL_CA_LOCATION`
-- `KAFKA_SSL_CA_PEM`
 - `KAFKA_TOPIC`
 - `KAFKA_CONSUMER_GROUP`
 - `MAX_INGEST_BATCH_SIZE`
@@ -148,23 +143,20 @@ Deployment target is DigitalOcean App Platform with:
 
 - Dockerized FastAPI web service.
 - Dockerized worker component running `python -m app.workers.metrics_worker`.
-- DigitalOcean Managed PostgreSQL.
-- DigitalOcean Managed Kafka.
+- Self-managed PostgreSQL and Kafka on one data Droplet for the interview deployment.
 - App Platform ingress/load balancing.
 - App Spec-managed `/healthz` health check.
 - App Spec-managed runtime environment variables.
 
-For DigitalOcean Managed Kafka, production uses SASL/SSL:
+For the interview deployment, App Platform connects to PostgreSQL and Kafka through the VPC using private IPs:
 
 ```text
-KAFKA_SECURITY_PROTOCOL=SASL_SSL
-KAFKA_SASL_MECHANISM=SCRAM-SHA-256
-KAFKA_USERNAME=<managed-kafka-user>
-KAFKA_PASSWORD=<managed-kafka-password>
-KAFKA_SSL_CA_PEM=<managed-kafka-ca-certificate>
+KAFKA_SECURITY_PROTOCOL=PLAINTEXT
+KAFKA_BOOTSTRAP_SERVERS=<data-droplet-private-ip>:9092
+DATABASE_URL=postgresql+psycopg://<user>:<password>@<data-droplet-private-ip>:5432/vm_metrics
 ```
 
-The deployment workflow fetches the Kafka CA certificate using `doctl databases get-ca` and injects it into the generated App Spec as encrypted `KAFKA_SSL_CA_PEM`. The app writes it to `/tmp/kafka-ca-certificate.crt` at startup and passes that path to the Kafka client.
+Production evolution should move back to DigitalOcean Managed PostgreSQL and Managed Kafka with SASL/SSL, backups, metrics, and HA.
 
 Smoke tests after deployment:
 

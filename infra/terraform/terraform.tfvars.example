@@ -1,22 +1,25 @@
-name_prefix     = "vm-service"
-app_name        = "vm-service"
-github_repo     = "amandayuelin/vm-service"
-github_branch   = "main"
-app_region      = "nyc"
-database_region = "nyc1"
+name_prefix   = "vm-service"
+app_name      = "vm-service"
+github_repo   = "amandayuelin/vm-service"
+github_branch = "main"
+app_region    = "nyc"
+region        = "nyc1"
+vpc_ip_range  = "10.20.0.0/16"
 
-postgres_version    = "18"
-postgres_size       = "db-s-1vcpu-1gb"
-postgres_node_count = 1
+data_droplet_image = "ubuntu-24-04-x64"
+data_droplet_size  = "s-2vcpu-2gb"
 
-kafka_version            = "3.5"
-kafka_size               = "db-s-2vcpu-2gb"
-kafka_node_count         = 3
-kafka_topic              = "vm.metric-samples.v1"
-kafka_dlq_topic          = "vm.metric-samples.dlq.v1"
-kafka_partition_count    = 12
-kafka_replication_factor = 2
-kafka_sasl_mechanism     = "SCRAM-SHA-256"
+# Optional: add SSH access for debugging.
+# ssh_key_fingerprints = ["<your-ssh-key-fingerprint-or-id>"]
+# ssh_allowed_cidrs    = ["<your-public-ip>/32"]
+
+postgres_db   = "vm_metrics"
+postgres_user = "vm_metrics"
+
+kafka_topic           = "vm.metric-samples.v1"
+kafka_dlq_topic       = "vm.metric-samples.dlq.v1"
+kafka_partition_count = 12
+max_kafka_heap_mb     = 768
 
 api_instance_count    = 1
 worker_instance_count = 1

@@ -1,6 +1,9 @@
 name: ${APP_NAME}
 region: ${APP_REGION}
 
+vpc:
+  id: ${VPC_ID}
+
 alerts:
   - rule: DEPLOYMENT_FAILED
 
@@ -30,26 +33,9 @@ envs:
     scope: RUN_TIME
     type: GENERAL
   - key: KAFKA_SECURITY_PROTOCOL
-    value: "SASL_SSL"
+    value: ${KAFKA_SECURITY_PROTOCOL}
     scope: RUN_TIME
     type: GENERAL
-  - key: KAFKA_SASL_MECHANISM
-    value: ${KAFKA_SASL_MECHANISM}
-    scope: RUN_TIME
-    type: GENERAL
-  - key: KAFKA_USERNAME
-    value: ${KAFKA_USERNAME}
-    scope: RUN_TIME
-    type: SECRET
-  - key: KAFKA_PASSWORD
-    value: ${KAFKA_PASSWORD}
-    scope: RUN_TIME
-    type: SECRET
-  - key: KAFKA_SSL_CA_PEM
-    value: |
-${KAFKA_SSL_CA_PEM_BLOCK}
-    scope: RUN_TIME
-    type: SECRET
   - key: KAFKA_TOPIC
     value: ${KAFKA_TOPIC}
     scope: RUN_TIME

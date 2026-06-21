@@ -10,11 +10,10 @@ from pathlib import Path
 JSON_QUOTED_KEYS = {
     "APP_NAME",
     "APP_REGION",
+    "VPC_ID",
     "DATABASE_URL",
     "KAFKA_BOOTSTRAP_SERVERS",
-    "KAFKA_SASL_MECHANISM",
-    "KAFKA_USERNAME",
-    "KAFKA_PASSWORD",
+    "KAFKA_SECURITY_PROTOCOL",
     "KAFKA_TOPIC",
     "KAFKA_DLQ_TOPIC",
     "KAFKA_CONSUMER_GROUP",
@@ -40,9 +39,6 @@ def required_env(name: str) -> str:
 
 
 def replacement(name: str) -> str:
-    if name == "KAFKA_SSL_CA_PEM_BLOCK":
-        ca_pem = required_env("KAFKA_SSL_CA_PEM").replace("\\n", "\n").strip()
-        return "\n".join(f"      {line}" for line in ca_pem.splitlines())
     if name in JSON_QUOTED_KEYS:
         return json.dumps(required_env(name))
     if name in RAW_KEYS:

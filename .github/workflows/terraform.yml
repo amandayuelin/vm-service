@@ -95,18 +95,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          postgres_cluster_id="$(terraform -chdir=infra/terraform output -raw postgres_cluster_id)"
-          kafka_cluster_id="$(terraform -chdir=infra/terraform output -raw kafka_cluster_id)"
-
           export APP_NAME="$(terraform -chdir=infra/terraform output -raw app_name)"
           export APP_REGION="$(terraform -chdir=infra/terraform output -raw app_region)"
+          export VPC_ID="$(terraform -chdir=infra/terraform output -raw vpc_id)"
           export GITHUB_REPO="$(terraform -chdir=infra/terraform output -raw github_repo)"
           export GITHUB_BRANCH="$(terraform -chdir=infra/terraform output -raw github_branch)"
           export DATABASE_URL="$(terraform -chdir=infra/terraform output -raw database_url)"
           export KAFKA_BOOTSTRAP_SERVERS="$(terraform -chdir=infra/terraform output -raw kafka_bootstrap_servers)"
-          export KAFKA_SASL_MECHANISM="$(terraform -chdir=infra/terraform output -raw kafka_sasl_mechanism)"
-          export KAFKA_USERNAME="$(terraform -chdir=infra/terraform output -raw kafka_username)"
-          export KAFKA_PASSWORD="$(terraform -chdir=infra/terraform output -raw kafka_password)"
+          export KAFKA_SECURITY_PROTOCOL="$(terraform -chdir=infra/terraform output -raw kafka_security_protocol)"
           export KAFKA_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_topic)"
           export KAFKA_DLQ_TOPIC="$(terraform -chdir=infra/terraform output -raw kafka_dlq_topic)"
           export KAFKA_CONSUMER_GROUP="$(terraform -chdir=infra/terraform output -raw kafka_consumer_group)"
@@ -116,23 +112,10 @@ jobs:
           export WORKER_INSTANCE_SIZE_SLUG="$(terraform -chdir=infra/terraform output -raw worker_instance_size_slug)"
           export MAX_INGEST_BATCH_SIZE="$(terraform -chdir=infra/terraform output -raw max_ingest_batch_size)"
           export MAX_PAGE_SIZE="$(terraform -chdir=infra/terraform output -raw max_page_size)"
-          export KAFKA_SSL_CA_PEM="$(doctl databases get-ca "$kafka_cluster_id" -o json | jq -r .certificate | base64 --decode)"
 
           echo "::add-mask::$DATABASE_URL"
-          echo "::add-mask::$KAFKA_USERNAME"
-          echo "::add-mask::$KAFKA_PASSWORD"
-          while IFS= read -r ca_line; do
-            if [ -n "$ca_line" ]; then
-              echo "::add-mask::$ca_line"
-            fi
-          done <<< "$KAFKA_SSL_CA_PEM"
 
           python scripts/render_app_spec.py .do/app.yaml.tmpl .do/app.generated.yaml
-
-          {
-            echo "POSTGRES_CLUSTER_ID=$postgres_cluster_id"
-            echo "KAFKA_CLUSTER_ID=$kafka_cluster_id"
-          } >> "$GITHUB_ENV"
 
       - name: Validate App Spec schema
         if: inputs.deploy_app == true
@@ -149,13 +132,6 @@ jobs:
           fi
           echo "APP_ID=$app_id" >> "$GITHUB_ENV"
 
-      - name: Restrict database trusted sources to App Platform app
-        if: inputs.deploy_app == true
-        run: |
-          set -euo pipefail
-          doctl databases firewalls replace "$POSTGRES_CLUSTER_ID" --rule "app:$APP_ID"
-          doctl databases firewalls replace "$KAFKA_CLUSTER_ID" --rule "app:$APP_ID"
-
-      - name: Redeploy app after trusted sources are active
+      - name: Trigger app deployment
         if: inputs.deploy_app == true
         run: doctl apps create-deployment "$APP_ID" --update-sources --wait
