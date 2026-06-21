@@ -1,0 +1,38 @@
+name_prefix     = "vm-service"
+app_name        = "vm-service"
+github_repo     = "amandayuelin/vm-service"
+github_branch   = "main"
+app_region      = "nyc"
+database_region = "nyc1"
+
+postgres_version    = "18"
+postgres_size       = "db-s-1vcpu-1gb"
+postgres_node_count = 1
+
+kafka_version            = "3.5"
+kafka_size               = "db-s-2vcpu-2gb"
+kafka_node_count         = 3
+kafka_topic              = "vm.metric-samples.v1"
+kafka_dlq_topic          = "vm.metric-samples.dlq.v1"
+kafka_partition_count    = 12
+kafka_replication_factor = 2
+kafka_sasl_mechanism     = "SCRAM-SHA-256"
+
+# Paste the full DigitalOcean Managed Kafka CA certificate contents here.
+# Do not commit your real terraform.tfvars file.
+kafka_ssl_ca_pem = <<EOT
+-----BEGIN CERTIFICATE-----
+replace-with-your-kafka-ca-certificate
+-----END CERTIFICATE-----
+EOT
+
+api_instance_count    = 1
+worker_instance_count = 1
+
+app_instance_size_slug    = "apps-s-1vcpu-1gb"
+worker_instance_size_slug = "apps-s-1vcpu-1gb"
+
+max_ingest_batch_size = 1000
+max_page_size         = 1000
+
+enable_database_firewalls = true

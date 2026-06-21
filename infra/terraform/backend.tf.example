@@ -1,0 +1,17 @@
+# Copy this file to backend.tf and configure a real remote backend before using
+# Terraform apply from GitHub Actions. Keeping state local in CI is unsafe
+# because the next run will not know what was already created.
+#
+# Example options:
+# - Terraform Cloud backend.
+# - S3-compatible backend using DigitalOcean Spaces.
+#
+# terraform {
+#   backend "remote" {
+#     organization = "your-terraform-cloud-org"
+#
+#     workspaces {
+#       name = "vm-service-production"
+#     }
+#   }
+# }

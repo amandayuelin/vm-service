@@ -97,6 +97,24 @@ For a full local stack:
 docker compose up --build
 ```
 
+## Infrastructure as Code and CI/CD
+
+Terraform configuration lives in `infra/terraform` and can create:
+
+- DigitalOcean App Platform API service.
+- DigitalOcean App Platform worker component.
+- DigitalOcean Managed PostgreSQL.
+- DigitalOcean Managed Kafka.
+- Kafka ingestion and DLQ topics.
+- Trusted-source database firewall rules for the app.
+
+GitHub Actions workflows live in `.github/workflows`:
+
+- `CI` runs tests and builds the Docker image on pushes and pull requests.
+- `Terraform` validates Terraform on infrastructure changes and supports manual plan/apply through workflow dispatch.
+
+For your manually-created DigitalOcean resources, import them into Terraform state before applying. See `infra/terraform/README.md`.
+
 ## Configuration
 
 See `.env.example` for supported environment variables. Important values:
