@@ -166,7 +166,187 @@ Important deployment files:
 - `scripts/deploy_digitalocean.sh`
 - `infra/production-reference/managed-data.tf.example`
 
-## 10. Production Trade-Offs
+## 10. Scaling And Distribution
+
+The deployed demo and the production architecture scale differently. In the interview, be explicit that the current deployment is optimized for speed, while the code boundaries support a distributed production version.
+
+### Current Demo Scaling
+
+Current deployment:
+
+```text
+App Platform ingress
+-> N API instances
+-> single Kafka broker on data Droplet
+-> M worker instances
+-> single PostgreSQL instance on data Droplet
+```
+
+What can scale horizontally today:
+
+- API service: increase `api_instance_count` in `infra/terraform/terraform.tfvars`.
+- Worker service: increase `worker_instance_count`.
+- App Platform ingress: built in; it load balances across API instances.
+
+What does not scale horizontally in the demo:
+
+- PostgreSQL is a single container on one Droplet.
+- Kafka is a single broker on one Droplet.
+- The data Droplet is the main bottleneck and single point of failure.
+
+This is acceptable for the time-boxed deployment, but it is not the final production scaling story.
+
+### API Scaling
+
+The API service is stateless:
+
+- No local session state.
+- Configuration comes from environment variables.
+- Ingestion requests are accepted and published to Kafka.
+- Query requests read from PostgreSQL.
+
+Because of that, the API can scale horizontally behind App Platform ingress by increasing `api_instance_count`.
+
+Main API bottlenecks in production:
+
+- Kafka producer throughput.
+- PostgreSQL read load for query endpoints.
+- Request validation and payload size.
+
+Controls:
+
+- Bounded batch size through `MAX_INGEST_BATCH_SIZE`.
+- Pagination through `MAX_PAGE_SIZE`.
+- App Platform horizontal scaling.
+- Rate limiting in a production edge/API layer.
+
+### Kafka Scaling
+
+The prompt requires up to 100k samples/sec peak, so production Kafka should be a managed multi-broker cluster.
+
+Production Kafka design:
+
+- Use DigitalOcean Managed Kafka.
+- Use a topic such as `vm.metric-samples.v1`.
+- Partition by `vm_id` so all samples for one VM preserve order.
+- Increase partition count to scale producer and worker throughput.
+- Run multiple worker replicas in the same consumer group.
+
+Partitioning by `vm_id` matters because the alert rule depends on consecutive samples for the same VM. With `vm_id` as the key, samples for one VM go to the same partition and are processed in order by one consumer at a time.
+
+Scaling rule of thumb:
+
+- Kafka partitions set the upper bound for concurrent consumers in one consumer group.
+- Worker replicas can scale up to the partition count.
+- More partitions allow more parallelism, but also increase operational overhead.
+
+Production additions:
+
+- Retry topic with backoff.
+- Dead-letter topic.
+- Consumer lag metrics.
+- Idempotent worker logic.
+- Transactional outbox if the API must durably record acceptance before publishing.
+
+### Worker Scaling
+
+Workers are horizontally scalable:
+
+```text
+Kafka topic partitions
+-> worker consumer group
+-> many worker replicas
+-> PostgreSQL writes
+```
+
+Each worker processes messages independently. Kafka assigns partitions across workers in the consumer group.
+
+The worker commits Kafka offsets only after successful database processing. If a worker crashes before commit, Kafka redelivers the message. PostgreSQL uniqueness on `sample_id` keeps redelivery from double-counting.
+
+Main worker bottlenecks:
+
+- PostgreSQL write throughput.
+- Hot VMs if one VM produces unusually high traffic.
+- Alert-state updates for the same VM.
+
+Production controls:
+
+- Partition by `vm_id`.
+- Batch database writes where safe.
+- Keep alert updates idempotent.
+- Use connection pooling.
+- Monitor processing latency and Kafka lag.
+
+### PostgreSQL Scaling
+
+PostgreSQL is the source of truth. It stores raw samples, aggregates, latest VM health, alert state, and ingestion batch status.
+
+Current demo:
+
+- Single PostgreSQL container on one data Droplet.
+- Good enough for live demo and smoke tests.
+- Not highly available and not suitable for sustained 50k-100k samples/sec.
+
+Production PostgreSQL evolution:
+
+- Move to DigitalOcean Managed PostgreSQL.
+- Use a larger primary instance and managed backups.
+- Add read replicas for query endpoints.
+- Use connection pooling, for example PgBouncer.
+- Partition or hypertable raw samples by time, such as daily partitions.
+- Retain raw samples for 7 days and hourly aggregates for 90 days.
+- Keep indexes aligned with query patterns:
+  - `(vm_id, observed_at)`
+  - `(status, created_at)` for alerts and batches
+  - unique `sample_id`
+  - idempotency key for batches
+
+Write scaling strategy:
+
+- Keep raw inserts append-heavy.
+- Use uniqueness constraints for correctness.
+- Maintain derived tables for query efficiency:
+  - hourly aggregates
+  - latest VM health
+  - active alerts
+- Avoid repeatedly scanning raw samples for user queries.
+
+For very high sustained ingestion, production options include:
+
+- Batch worker writes.
+- Time-based partitioning.
+- Separate raw sample storage from serving tables.
+- Move high-volume metric history to a time-series optimized store if requirements grow beyond PostgreSQL.
+
+### Query Scaling
+
+Query endpoints should not scan the full raw sample table.
+
+The design supports this by separating:
+
+- raw samples for recent range queries
+- hourly aggregates for lower-resolution history
+- latest health for current VM status
+- active alerts for alert dashboards
+
+Production query scaling:
+
+- Enforce time-range limits.
+- Keep pagination mandatory.
+- Use read replicas for dashboard/query traffic.
+- Add caching only after measuring read pressure.
+
+### Deployment Scaling
+
+App Platform can scale API and worker components independently:
+
+- API instances scale with request rate.
+- Worker instances scale with Kafka lag and processing latency.
+- Data services scale separately.
+
+The important architecture decision is separating synchronous ingestion from asynchronous processing. That lets the API remain responsive while workers absorb processing load.
+
+## 11. Production Trade-Offs
 
 The current deployment intentionally uses self-managed PostgreSQL and Kafka on one Droplet for speed. That is acceptable for a time-boxed interview demo, but it is not HA.
 
@@ -190,7 +370,7 @@ Production evolution:
 - Retention cleanup jobs.
 - CI/CD with remote Terraform state.
 
-## 11. Suggested Walkthrough Order
+## 12. Suggested Walkthrough Order
 
 1. Start with the problem and scale.
 2. Explain why async ingestion is used.
