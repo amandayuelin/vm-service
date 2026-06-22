@@ -24,6 +24,8 @@ app/
   workers/                # Kafka consumer entrypoints
 ```
 
+For interview walkthrough notes, see `CODE_REVIEW_NOTES.md`.
+
 ## Endpoints
 
 - `GET /healthz`
