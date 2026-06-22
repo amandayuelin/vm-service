@@ -76,17 +76,24 @@ if [ "$skip_infra" = true ] && [ "$skip_app" = true ]; then
   exit 1
 fi
 
-if [ -z "${DIGITALOCEAN_TOKEN:-}" ]; then
-  echo "DIGITALOCEAN_TOKEN is required." >&2
-  exit 1
-fi
-
 require_cmd terraform
 require_cmd doctl
 require_cmd awk
 
 python_bin="${PYTHON_BIN:-python3}"
 require_cmd "$python_bin"
+
+if [ -z "${DIGITALOCEAN_TOKEN:-}" ] && [ "$skip_infra" = false ]; then
+  echo "DIGITALOCEAN_TOKEN is required for Terraform apply." >&2
+  exit 1
+fi
+
+if [ -z "${DIGITALOCEAN_TOKEN:-}" ] && [ "$skip_app" = false ]; then
+  if ! doctl account get >/dev/null 2>&1; then
+    echo "DIGITALOCEAN_TOKEN or an authenticated doctl context is required for App Platform deployment." >&2
+    exit 1
+  fi
+fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
@@ -151,15 +158,12 @@ export MAX_PAGE_SIZE="$(tfout max_page_size)"
 echo "==> Validating App Spec schema"
 doctl apps spec validate "$app_spec" --schema-only > /dev/null
 
-echo "==> Upserting App Platform app"
-app_id="$(doctl apps create --spec "$app_spec" --upsert --update-sources --format ID --no-header | awk 'NR == 1 {print $1}')"
+echo "==> Upserting App Platform app and waiting for deployment"
+app_id="$(doctl apps create --spec "$app_spec" --upsert --update-sources --wait --format ID --no-header | awk 'NR == 1 {print $1}')"
 if [ -z "$app_id" ]; then
   echo "App upsert did not return an app ID." >&2
   exit 1
 fi
-
-echo "==> Creating App Platform deployment"
-doctl apps create-deployment "$app_id" --update-sources --wait
 
 default_ingress="$(doctl apps get "$app_id" --format DefaultIngress --no-header | awk 'NR == 1 {print $1}')"
 echo "==> Deployment complete"

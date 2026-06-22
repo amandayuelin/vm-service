@@ -125,13 +125,9 @@ jobs:
         if: inputs.deploy_app == true
         run: |
           set -euo pipefail
-          app_id="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --format ID --no-header | awk 'NR == 1 {print $1}')"
+          app_id="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --wait --format ID --no-header | awk 'NR == 1 {print $1}')"
           if [ -z "$app_id" ]; then
             echo "App upsert did not return an app ID."
             exit 1
           fi
           echo "APP_ID=$app_id" >> "$GITHUB_ENV"
-
-      - name: Trigger app deployment
-        if: inputs.deploy_app == true
-        run: doctl apps create-deployment "$APP_ID" --update-sources --wait

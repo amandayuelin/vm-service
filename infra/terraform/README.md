@@ -109,8 +109,7 @@ export MAX_PAGE_SIZE="$(terraform -chdir=infra/terraform output -raw max_page_si
 
 python scripts/render_app_spec.py .do/app.yaml.tmpl .do/app.generated.yaml
 doctl apps spec validate .do/app.generated.yaml --schema-only > /dev/null
-APP_ID="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --format ID --no-header | awk 'NR == 1 {print $1}')"
-doctl apps create-deployment "$APP_ID" --update-sources --wait
+APP_ID="$(doctl apps create --spec .do/app.generated.yaml --upsert --update-sources --wait --format ID --no-header | awk 'NR == 1 {print $1}')"
 ```
 
 ## GitHub Actions
